@@ -8,10 +8,17 @@ const char* WIFI_PASS = "ethanoly";
 WebServer server(80);
 
 // Motor control pins
-const int PIN1 = 2;   // Speed controller for motor 1
-const int PIN2 = 14;   // Control pin 2
-const int PIN3 = 15;  // Speed controller for motor 2
-const int PIN4 = 13;  // Control pin 4
+const int PIN1 = 2;   // PWM motor 1 speed
+const int PIN2 = 14;   // Motor 1 direction
+const int PIN3 = 15;  // PWM motor 2 speed
+const int PIN4 = 13;  // Motor 2 direction
+
+// PWM settings
+const int PWM_FREQ = 5000;  // 5kHz PWM frequency
+const int PWM_BITS = 8;     // 8-bit resolution (0-255)
+const int PWM_CHANNEL1 = 0;
+const int PWM_CHANNEL2 = 1;
+const int MOTOR_SPEED = 255; // Full speed
 
 // Non-blocking delay state
 unsigned long delayStartTime = 0;
@@ -27,12 +34,9 @@ static auto hiRes = esp32cam::Resolution::find(800, 600);
 void serveJpg() {
     auto frame = esp32cam::capture();
     if (frame == nullptr) {
-        Serial.println("CAPTURE FAIL");
         server.send(503, "text/plain", "capture failed");
         return;
     }
-    Serial.printf("CAPTURE OK %dx%d %db\n", frame->getWidth(), frame->getHeight(),
-                  static_cast<int>(frame->size()));
 
     server.setContentLength(frame->size());
     server.send(200, "image/jpeg");
@@ -48,8 +52,8 @@ void handleJpgHi()  { if (!esp32cam::Camera.changeResolution(hiRes)) Serial.prin
 
 // Handler for Python detection signal
 void handlePersonDetected() {
-    digitalWrite(PIN1, LOW);    // stop motor 1
-    digitalWrite(PIN3, LOW);    // stop motor 2
+    ledcWrite(PWM_CHANNEL1, 0);     // Stop motor 1
+    ledcWrite(PWM_CHANNEL2, 0);     // Stop motor 2
     
     // Start non-blocking 2-second delay for PIN2 and PIN4
     delayStartTime = millis();
@@ -61,8 +65,8 @@ void handlePersonDetected() {
 
 // Handler to reset the pin
 void handlePersonGone() {
-    digitalWrite(PIN1, HIGH);   // enable motor 1
-    digitalWrite(PIN3, HIGH);   // enable motor 2
+    ledcWrite(PWM_CHANNEL1, MOTOR_SPEED);   // Enable motor 1 at full speed
+    ledcWrite(PWM_CHANNEL2, MOTOR_SPEED);   // Enable motor 2 at full speed
     
     // Start non-blocking 2-second delay for PIN2 and PIN4
     delayStartTime = millis();
@@ -76,24 +80,30 @@ void setup() {
     Serial.begin(115200);
     Serial.println();
 
-    // Initialize motor control pins
-    pinMode(PIN1, OUTPUT);
+    // Configure PWM for motor speed control
+    ledcSetup(PWM_CHANNEL1, PWM_FREQ, PWM_BITS);
+    ledcSetup(PWM_CHANNEL2, PWM_FREQ, PWM_BITS);
+    ledcAttachPin(PIN1, PWM_CHANNEL1);
+    ledcAttachPin(PIN3, PWM_CHANNEL2);
+    
+    // Initialize direction pins
     pinMode(PIN2, OUTPUT);
-    pinMode(PIN3, OUTPUT);
     pinMode(PIN4, OUTPUT);
     
     // Startup config: motors running
-    digitalWrite(PIN1, LOW);   // enable motor 1
-    digitalWrite(PIN3, LOW);   // enable motor 2
+    ledcWrite(PWM_CHANNEL1, MOTOR_SPEED);  // Motor 1 at full speed
+    ledcWrite(PWM_CHANNEL2, MOTOR_SPEED);  // Motor 2 at full speed
+    digitalWrite(PIN2, LOW);   // Direction 1
+    digitalWrite(PIN4, LOW);   // Direction 2
 
     // Camera config
     {
         using namespace esp32cam;
         Config cfg;
         cfg.setPins(pins::AiThinker);
-        cfg.setResolution(hiRes);
-        cfg.setBufferCount(2);
-        cfg.setJpeg(80);
+        cfg.setResolution(midRes);    // Start with mid-res for faster capture
+        cfg.setBufferCount(4);        // Increased from 2 for smoother streaming
+        cfg.setJpeg(60);              // Reduced from 80 for faster encoding (smaller files)
 
         bool ok = Camera.begin(cfg);
         Serial.println(ok ? "CAMERA OK" : "CAMERA FAIL");
@@ -126,16 +136,16 @@ void setup() {
 void loop() {
     server.handleClient();
     
-    // Handle non-blocking delay for PIN2 and PIN4
+    // Handle non-blocking delay for direction pins
     if (delayActive && (millis() - delayStartTime >= 2000)) {
         if (delayForDetection) {
-            // Person detected - set PIN2 and PIN4 LOW
-            digitalWrite(PIN1, LOW);
-            digitalWrite(PIN3, LOW);
+            // Person detected - stop by reducing speed
+            digitalWrite(PIN2, LOW);
+            digitalWrite(PIN4, LOW);
         } else {
-            // Person gone - set PIN2 and PIN4 HIGH
-            digitalWrite(PIN1, HIGH);
-            digitalWrite(PIN3, HIGH);
+            // Person gone - resume full speed
+            digitalWrite(PIN2, LOW);
+            digitalWrite(PIN4, LOW);
         }
         delayActive = false;
     }
