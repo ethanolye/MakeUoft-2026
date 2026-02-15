@@ -14,11 +14,11 @@ from tkinter import Label, Button, Frame
 from pathlib import Path
 from ultralytics import YOLO
 
-# Set socket timeout globally (reduced for moving car)
-socket.setdefaulttimeout(1.0)
+# Set socket timeout globally
+socket.setdefaulttimeout(1.5)
 
 # URL of your ESP32-CAM low-res endpoint (faster processing)
-ESP32_CAM_URL = "http://172.20.10.2/cam-hijpg"  # Using LOW-RES for faster processing on moving car
+ESP32_CAM_URL = "http://172.20.10.2/cam-hi.jpg"
 ESP32_BASE_URL = "http://172.20.10.2"
 
 # Pin configuration for detection states
@@ -36,55 +36,13 @@ PIN_CONFIG = {
         "pin2": 0,    # Motor 1 direction (LOW)
         "pin3": 255,  # Motor 2 speed (255 = full speed)
         "pin4": 0     # Motor 2 direction (LOW)
-    },
-    "forward_full": {     # Forward at full speed
-        "pin1": 255,
-        "pin2": 0,
-        "pin3": 255,
-        "pin4": 0
-    },
-    "backward_full": {    # Backward at full speed
-        "pin1": 255,
-        "pin2": 1,
-        "pin3": 255,
-        "pin4": 1
-    },
-    "forward_half": {     # Forward at half speed
-        "pin1": 128,
-        "pin2": 0,
-        "pin3": 128,
-        "pin4": 0
-    },
-    "backward_half": {    # Backward at half speed
-        "pin1": 128,
-        "pin2": 1,
-        "pin3": 128,
-        "pin4": 1
-    },
-    "turn_left": {        # Turn left (right motor forward, left motor stopped)
-        "pin1": 0,
-        "pin2": 0,
-        "pin3": 200,
-        "pin4": 0
-    },
-    "turn_right": {       # Turn right (left motor forward, right motor stopped)
-        "pin1": 200,
-        "pin2": 0,
-        "pin3": 0,
-        "pin4": 0
-    },
-    "stop": {             # Full stop
-        "pin1": 0,
-        "pin2": 0,
-        "pin3": 0,
-        "pin4": 0
     }
 }
 
-# Detection settings - OPTIMIZED FOR MOVING CAR
-CONF_THRESHOLD = 0.45  # Slightly higher for more reliable detection on moving vehicle
-FRAME_DELAY = 0.02     # ~50 FPS for faster response
-DETECTION_BUFFER = 1   # Reduced to 1 for immediate response (fast-moving car)
+# Detection settings
+CONF_THRESHOLD = 0.4 # confidence threshold (higher = more reliable)
+FRAME_DELAY = 0.03     # ~30 FPS
+DETECTION_BUFFER = 2  # require detection stable for N frames before toggling
 CONFIDENCE_SMOOTHING = True  # average confidence over multiple frames
 
 # Set up model file paths
@@ -126,7 +84,7 @@ def manual_motors_on_click():
         # Use person_gone configuration for motors on
         config = PIN_CONFIG["person_gone"]
         params = f"?pin1={config['pin1']}&pin2={config['pin2']}&pin3={config['pin3']}&pin4={config['pin4']}"
-        requests.get(f"{ESP32_BASE_URL}/person-gone{params}", timeout=1.5)
+        requests.get(f"{ESP32_BASE_URL}/person-gone{params}", timeout=3.0)
         print(f"[MANUAL] Motors ON - Pins: {config}")
         if status_label:
             status_label.config(text="Status: MANUAL - Motors ON", fg="green")
@@ -142,7 +100,7 @@ def manual_motors_off_click():
         # Use person_detected configuration for motors off
         config = PIN_CONFIG["person_detected"]
         params = f"?pin1={config['pin1']}&pin2={config['pin2']}&pin3={config['pin3']}&pin4={config['pin4']}"
-        requests.get(f"{ESP32_BASE_URL}/person-detected{params}", timeout=1.5)
+        requests.get(f"{ESP32_BASE_URL}/person-detected{params}", timeout=3.0)
         print(f"[MANUAL] Motors OFF - Pins: {config}")
         if status_label:
             status_label.config(text="Status: MANUAL - Motors OFF", fg="red")
@@ -157,133 +115,43 @@ def auto_mode_click():
     if status_label:
         status_label.config(text="Status: AUTO Detection Active", fg="blue")
 
-def send_pin_config(config_name):
-    """Send a specific pin configuration to ESP32."""
-    global manual_override
-    manual_override = True
-    try:
-        config = PIN_CONFIG[config_name]
-        params = f"?pin1={config['pin1']}&pin2={config['pin2']}&pin3={config['pin3']}&pin4={config['pin4']}"
-        requests.get(f"{ESP32_BASE_URL}/person-gone{params}", timeout=1.5)
-        print(f"[MANUAL] Config '{config_name}' - Pins: {config}")
-        if status_label:
-            status_label.config(text=f"Status: MANUAL - {config_name.replace('_', ' ').title()}", fg="orange")
-    except Exception as e:
-        print(f"[ERROR] Failed to send config '{config_name}': {e}")
-
-def forward_full_click():
-    send_pin_config("forward_full")
-
-def backward_full_click():
-    send_pin_config("backward_full")
-
-def forward_half_click():
-    send_pin_config("forward_half")
-
-def backward_half_click():
-    send_pin_config("backward_half")
-
-def turn_left_click():
-    send_pin_config("turn_left")
-
-def turn_right_click():
-    send_pin_config("turn_right")
-
-def stop_click():
-    send_pin_config("stop")
-
 def create_control_gui(root):
     """Create manual control GUI window."""
     global status_label
     
     root.title("ESP32-CAM Motor Control")
-    root.geometry("400x550")
+    root.geometry("300x200")
     root.resizable(False, False)
     
     # Title label
     title_label = Label(root, text="Manual Motor Control", font=("Arial", 14, "bold"))
-    title_label.pack(pady=5)
+    title_label.pack(pady=10)
     
     # Status label
-    status_label = Label(root, text="Status: AUTO Detection Active", font=("Arial", 10), fg="blue")
+    status_label = Label(root, text="Status: AUTO Detection Active", font=("Arial", 11), fg="blue")
     status_label.pack(pady=5)
     
-    # Main button frame
+    # Button frame
     button_frame = Frame(root)
-    button_frame.pack(pady=5)
+    button_frame.pack(pady=10)
     
-    # Basic controls section
-    basic_label = Label(button_frame, text="Basic Controls", font=("Arial", 11, "bold"))
-    basic_label.grid(row=0, column=0, columnspan=2, pady=5)
-    
+    # Buttons
     motors_on_btn = Button(button_frame, text="Motors ON", command=manual_motors_on_click, 
-                           width=18, bg="green", fg="white", font=("Arial", 9, "bold"))
-    motors_on_btn.grid(row=1, column=0, padx=5, pady=3)
+                           width=15, bg="green", fg="white", font=("Arial", 10, "bold"))
+    motors_on_btn.pack(pady=5)
     
     motors_off_btn = Button(button_frame, text="Motors OFF", command=manual_motors_off_click, 
-                            width=18, bg="red", fg="white", font=("Arial", 9, "bold"))
-    motors_off_btn.grid(row=1, column=1, padx=5, pady=3)
-    
-    stop_btn = Button(button_frame, text="STOP", command=stop_click, 
-                      width=18, bg="#8B0000", fg="white", font=("Arial", 9, "bold"))
-    stop_btn.grid(row=2, column=0, padx=5, pady=3)
+                            width=15, bg="red", fg="white", font=("Arial", 10, "bold"))
+    motors_off_btn.pack(pady=5)
     
     auto_btn = Button(button_frame, text="AUTO Mode", command=auto_mode_click, 
-                      width=18, bg="blue", fg="white", font=("Arial", 9, "bold"))
-    auto_btn.grid(row=2, column=1, padx=5, pady=3)
-    
-    # Separator
-    sep1 = Label(button_frame, text="" + u'\u2500'*40, font=("Arial", 8))
-    sep1.grid(row=3, column=0, columnspan=2, pady=5)
-    
-    # Full speed section
-    full_label = Label(button_frame, text="Full Speed", font=("Arial", 11, "bold"))
-    full_label.grid(row=4, column=0, columnspan=2, pady=5)
-    
-    forward_full_btn = Button(button_frame, text="Forward Full", command=forward_full_click, 
-                              width=18, bg="#006400", fg="white", font=("Arial", 9))
-    forward_full_btn.grid(row=5, column=0, padx=5, pady=3)
-    
-    backward_full_btn = Button(button_frame, text="Backward Full", command=backward_full_click, 
-                               width=18, bg="#8B4513", fg="white", font=("Arial", 9))
-    backward_full_btn.grid(row=5, column=1, padx=5, pady=3)
-    
-    # Separator
-    sep2 = Label(button_frame, text="" + u'\u2500'*40, font=("Arial", 8))
-    sep2.grid(row=6, column=0, columnspan=2, pady=5)
-    
-    # Half speed section
-    half_label = Label(button_frame, text="Half Speed", font=("Arial", 11, "bold"))
-    half_label.grid(row=7, column=0, columnspan=2, pady=5)
-    
-    forward_half_btn = Button(button_frame, text="Forward Half", command=forward_half_click, 
-                              width=18, bg="#228B22", fg="white", font=("Arial", 9))
-    forward_half_btn.grid(row=8, column=0, padx=5, pady=3)
-    
-    backward_half_btn = Button(button_frame, text="Backward Half", command=backward_half_click, 
-                               width=18, bg="#A0522D", fg="white", font=("Arial", 9))
-    backward_half_btn.grid(row=8, column=1, padx=5, pady=3)
-    
-    # Separator
-    sep3 = Label(button_frame, text="" + u'\u2500'*40, font=("Arial", 8))
-    sep3.grid(row=9, column=0, columnspan=2, pady=5)
-    
-    # Turn section
-    turn_label = Label(button_frame, text="Turning", font=("Arial", 11, "bold"))
-    turn_label.grid(row=10, column=0, columnspan=2, pady=5)
-    
-    turn_left_btn = Button(button_frame, text="Turn Left", command=turn_left_click, 
-                           width=18, bg="#4169E1", fg="white", font=("Arial", 9))
-    turn_left_btn.grid(row=11, column=0, padx=5, pady=3)
-    
-    turn_right_btn = Button(button_frame, text="Turn Right", command=turn_right_click, 
-                            width=18, bg="#4169E1", fg="white", font=("Arial", 9))
-    turn_right_btn.grid(row=11, column=1, padx=5, pady=3)
+                      width=15, bg="blue", fg="white", font=("Arial", 10, "bold"))
+    auto_btn.pack(pady=5)
     
     # Info label
-    info_label = Label(root, text="Use buttons for manual control or switch to AUTO", 
-                       font=("Arial", 8), fg="gray")
-    info_label.pack(pady=5)
+    info_label = Label(root, text="Press buttons to control\nor switch to auto detection", 
+                       font=("Arial", 9), fg="gray")
+    info_label.pack(pady=10)
 
 def detection_thread_worker():
     """Run detection loop in background thread."""
@@ -350,7 +218,7 @@ def signal_handler(sig, frame):
 def get_frame():
     """Capture a single frame from ESP32-CAM with timeout protection."""
     try:
-        # Use shorter timeout (1.0s) for faster failure detection on moving car
+        # Use shorter timeout (1.5s) for faster failure detection
         img_resp = urllib.request.urlopen(ESP32_CAM_URL, timeout=1.5)
         img_data = img_resp.read()
         img_resp.close()
@@ -449,14 +317,14 @@ def trigger_esp32(person_present):
             # Person detected - send configured pin states
             config = PIN_CONFIG["person_detected"]
             params = f"?pin1={config['pin1']}&pin2={config['pin2']}&pin3={config['pin3']}&pin4={config['pin4']}"
-            requests.get(f"{ESP32_BASE_URL}/person-detected{params}", timeout=1.5)
+            requests.get(f"{ESP32_BASE_URL}/person-detected{params}", timeout=3.0)
             person_detected = True
             print(f"[ACTION] Person detected (stable): Pins set to {config}")
         elif not stable_person and person_detected:
             # Person gone - send configured pin states
             config = PIN_CONFIG["person_gone"]
             params = f"?pin1={config['pin1']}&pin2={config['pin2']}&pin3={config['pin3']}&pin4={config['pin4']}"
-            requests.get(f"{ESP32_BASE_URL}/person-gone{params}", timeout=1.5)
+            requests.get(f"{ESP32_BASE_URL}/person-gone{params}", timeout=3.0)
             person_detected = False
             print(f"[ACTION] No person (stable): Pins set to {config}")
     except requests.RequestException as e:

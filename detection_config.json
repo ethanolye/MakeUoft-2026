@@ -1,0 +1,12 @@
+{
+    "esp32_ip": "172.20.10.2",
+    "camera_resolution": "hi",
+    "conf_threshold": 0.45,
+    "frame_delay": 0.02,
+    "detection_buffer": 1,
+    "enable_recording": false,
+    "enable_csv_logging": true,
+    "show_fps": true,
+    "detection_zone": null,
+    "timeout": 1.0
+}
